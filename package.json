@@ -1,0 +1,17 @@
+{
+  "name": "akram-xmd",
+  "version": "1.0.0",
+  "description": "AKRAM XMD WhatsApp Multi-Device Bot",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "pino": "latest",
+    "qrcode-terminal": "latest",
+    "express": "latest",
+    "dotenv": "latest"
+  }
+}
