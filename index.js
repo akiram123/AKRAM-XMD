@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
@@ -6,32 +8,15 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 
 import pino from "pino";
-import readline from "readline";
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-const ask = (question) =>
-  new Promise(resolve => rl.question(question, resolve));
+import { handleCommand } from "./commands.js";
 
 async function startBot() {
-  console.log("================================");
-  console.log("       AKRAM XMD");
-  console.log("   WhatsApp Multi-Device Bot");
-  console.log("================================");
+  console.log("🔥 AKRAM XMD STARTING...");
 
-  let phoneNumber = process.env.PHONE_NUMBER;
-
-  if (!phoneNumber && process.stdin.isTTY) {
-    phoneNumber = await ask("Enter WhatsApp number with country code: ");
-  }
-
-  phoneNumber = (phoneNumber || "").replace(/\D/g, "");
+  const phoneNumber = (process.env.PHONE_NUMBER || "").replace(/\D/g, "");
 
   if (!phoneNumber) {
-    throw new Error("Set PHONE_NUMBER before starting the bot.");
+    throw new Error("PHONE_NUMBER is missing from environment variables.");
   }
 
   const { state, saveCreds } =
@@ -43,49 +28,44 @@ async function startBot() {
     version,
     auth: state,
     logger: pino({ level: "silent" }),
-    browser: Browsers.ubuntu("Chrome"),
-    printQRInTerminal: false
+    browser: Browsers.ubuntu("Chrome")
   });
 
   sock.ev.on("creds.update", saveCreds);
+
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect } = update;
+
+    if (connection === "connecting") {
+      console.log("Connecting to WhatsApp...");
+    }
+
+    if (connection === "open") {
+      console.log("✅ AKRAM XMD CONNECTED!");
+    }
+
+    if (connection === "close") {
+      const status = lastDisconnect?.error?.output?.statusCode;
+
+      if (status === DisconnectReason.loggedOut) {
+        console.log("WhatsApp logged out. Pair again.");
+      } else {
+        console.log("Connection lost. Reconnecting...");
+        startBot();
+      }
+    }
+  });
 
   if (!state.creds.registered) {
     setTimeout(async () => {
       try {
         const code = await sock.requestPairingCode(phoneNumber);
-
-        console.log("\n================================");
-        console.log("      AKRAM XMD PAIRING");
-        console.log("================================");
-        console.log("YOUR PAIRING CODE:", code);
-        console.log("================================\n");
-        console.log("Enter this code in WhatsApp.");
+        console.log("AKRAM XMD PAIRING CODE:", code);
       } catch (error) {
-        console.error("Pairing error:", error.message);
+        console.error("Pairing failed:", error.message);
       }
     }, 3000);
   }
-
-  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
-    if (connection === "open") {
-      console.log("AKRAM XMD CONNECTED SUCCESSFULLY!");
-      console.log("Your WhatsApp bot is online.");
-    }
-
-    if (connection === "close") {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !==
-        DisconnectReason.loggedOut;
-
-      console.log("Connection closed.");
-
-      if (shouldReconnect) {
-        startBot();
-      } else {
-        console.log("Session logged out. Pair again.");
-      }
-    }
-  });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
@@ -104,72 +84,9 @@ async function startBot() {
 
       if (!text.startsWith(".")) continue;
 
-      const command = text.trim().split(/\s+/)[0].toLowerCase();
+      const command = text.trim().split(/\s+/)[0];
 
-      try {
-        switch (command) {
-
-          case ".menu":
-            await sock.sendMessage(jid, {
-              text: `
-╔════════════════════╗
-       AKRAM XMD
-    PREMIUM WHATSAPP BOT
-╚════════════════════╝
-
-🤖 GENERAL COMMANDS
-.ping
-.alive
-.menu
-.owner
-
-🛠️ MORE FEATURES
-.sticker
-.translate
-.ai
-.play
-.tiktok
-.instagram
-
-👥 GROUP COMMANDS
-.tagall
-.kick
-.promote
-.demote
-
-🔥 AKRAM XMD
-Black & Gold Edition
-              `
-            });
-            break;
-
-          case ".ping":
-            await sock.sendMessage(jid, {
-              text: "🏓 AKRAM XMD is online!"
-            });
-            break;
-
-          case ".alive":
-            await sock.sendMessage(jid, {
-              text: "🔥 AKRAM XMD is alive and running!"
-            });
-            break;
-
-          case ".owner":
-            await sock.sendMessage(jid, {
-              text: "👑 AKRAM XMD Owner"
-            });
-            break;
-
-          default:
-            await sock.sendMessage(jid, {
-              text: "❌ Unknown command. Type .menu"
-            });
-        }
-
-      } catch (error) {
-        console.error("Command error:", error);
-      }
+      await handleCommand(sock, jid, command);
     }
   });
 }
